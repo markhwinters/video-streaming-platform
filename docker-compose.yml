@@ -1,0 +1,71 @@
+services: 
+  haproxy:
+    image: haproxy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./certs/localhost.crt:/usr/local/etc/haproxy/certs/localhost.crt:ro
+      - ./certs/localhost.crt.key:/usr/local/etc/haproxy/certs/localhost.crt.key:ro
+    depends_on:
+      - varnish
+      - api
+      - frontend
+
+  varnish:
+    image: varnish:9.1
+    volumes:
+      - ./varnish/default.vcl:/etc/varnish/default.vcl:ro
+    depends_on:
+      - nginx-media
+
+  nginx-media:
+    image: nginx:alpine
+    volumes:
+      - ./nginx-media/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./media:/var/www/media
+
+  api:
+    build: ./api
+    environment:
+      MONGODB_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set MONGO_INITDB_ROOT_USERNAME in .env}
+      MONGODB_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD in .env}
+      MONGODB_HOST: mongo
+      MONGODB_DATABASE: streaming
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?Set CLERK_SECRET_KEY in .env}
+      CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?Set VITE_CLERK_PUBLISHABLE_KEY in .env}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?Set VITE_CLERK_PUBLISHABLE_KEY in .env}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - varnish
+
+  mongo:
+    image: mongo:latest
+    container_name: mongo_db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set MONGO_INITDB_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'mongosh --quiet --username "$$MONGO_INITDB_ROOT_USERNAME" --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand({ ping: 1 }).ok"'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mongodata:

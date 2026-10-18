@@ -1,0 +1,14 @@
+certs/
+media/
+
+# dependencies
+node_modules/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+build/
